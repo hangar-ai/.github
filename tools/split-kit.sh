@@ -3,8 +3,8 @@
 #
 #   tools/split-kit.sh <kit id> --from <Hangar checkout or URL> [--repo <name>] [--ref <branch>]
 #
-#   tools/split-kit.sh annotate --from ../IaBench
-#   tools/split-kit.sh ci-status --from ../IaBench --repo kit-ci
+#   tools/split-kit.sh annotate --from ../hangar-ai
+#   tools/split-kit.sh ci-status --from ../hangar-ai --repo kit-ci
 #
 # It copies kits/<id> as committed on the branch, main by default, into a new repository, whose one
 # commit cites the commit of Hangar it came from. Your checkout is only read. It makes the repository
