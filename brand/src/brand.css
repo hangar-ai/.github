@@ -1,0 +1,68 @@
+/* Hangar's own: Graphite, the app's default theme, and Inter, exactly as site/styles.css has them. */
+@font-face {
+  font-family: "Inter Variable";
+  font-weight: 100 900;
+  src: url(inter-latin-opsz.woff2) format("woff2");
+}
+
+:root {
+  --bg: #121316;
+  --fg-hi: #ecedf0;
+  --fg-secondary: #9c9da2;
+  --accent: #3e8bff;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg-hi);
+  font-family: "Inter Variable", sans-serif;
+  font-optical-sizing: auto;
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mark {
+  display: block;
+  flex: none;
+}
+
+.mark .on {
+  fill: var(--accent);
+}
+
+.mark .rest {
+  fill: var(--fg-hi);
+}
+
+.name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.fine {
+  margin-left: auto;
+  color: var(--fg-secondary);
+}
+
+h1 {
+  font-weight: 700;
+  letter-spacing: -0.042em;
+  line-height: 1.04;
+}
+
+p {
+  color: var(--fg-secondary);
+}

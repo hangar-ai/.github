@@ -1,0 +1,86 @@
+name: Kit check
+
+# The reusable workflow every kit repository calls:
+#
+#   jobs:
+#     kit-check:
+#       uses: hangar-ai/.github/.github/workflows/kit-check.yml@v1
+#
+# The manifest check restates the rules of Hangar's Rust validator, it is not that validator:
+# scripts/lib/manifest.mjs says where the two can differ. Hangar re-reads every manifest itself.
+
+on:
+  workflow_call:
+    inputs:
+      hangar-ref:
+        description: The Hangar tag to take Hangar UI and the docs from. Empty reads it from the manifest's `hangar`, so `>=1.9.0` is v1.9.0.
+        type: string
+        default: ""
+      tools-ref:
+        description: The ref of hangar-ai/.github holding the scripts. Keep it in step with the @ref of `uses`.
+        type: string
+        default: v1
+      node-version:
+        type: string
+        default: "22"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Manifest, pages, nothing personal
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: hangar-ai/.github
+          ref: ${{ inputs.tools-ref }}
+          path: .kit-check-tools
+          persist-credentials: false
+      - name: Keep the tools out of the kit
+        run: mv .kit-check-tools "$RUNNER_TEMP/kit-check-tools"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Check the kit
+        run: node "$RUNNER_TEMP/kit-check-tools/scripts/kit-check.mjs" .
+
+  tests:
+    name: node --test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: hangar-ai/.github
+          ref: ${{ inputs.tools-ref }}
+          path: .kit-check-tools
+          persist-credentials: false
+      - name: Keep the tools out of the kit
+        shell: bash
+        run: mv .kit-check-tools "$RUNNER_TEMP/kit-check-tools"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Get Hangar UI and the docs at the pinned tag
+        shell: bash
+        env:
+          HANGAR_REF: ${{ inputs.hangar-ref }}
+        run: |
+          node "$RUNNER_TEMP/kit-check-tools/scripts/fetch-hangar-ui.mjs" \
+            --kit . --out "$RUNNER_TEMP/hangar-ui" ${HANGAR_REF:+--ref "$HANGAR_REF"}
+      - name: Tests
+        run: node --test
