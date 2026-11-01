@@ -7,7 +7,6 @@ What the [hangar-ai](https://github.com/hangar-ai) organization shares between i
 | `profile/README.md`                   | The organization's public page.                                       |
 | `.github/workflows/kit-check.yml`     | The reusable workflow every kit repository calls.                     |
 | `scripts/kit-check.mjs`               | What it runs: manifest, card, pages, personal data. Node alone.       |
-| `tools/split-kit.sh`                  | Makes a kit's repository from a folder of Hangar's, in one command.   |
 | `brand/`                              | The avatar, banner and social preview, with their sources and `render.mjs`. |
 | `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` | The defaults of every repository here.           |
 
