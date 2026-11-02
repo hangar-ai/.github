@@ -1,4 +1,4 @@
-// The cases of the #[test] functions of src-tauri/src/kits/manifest.rs in simnJS/hangar-ai,
+// The cases of the #[test] functions of src-tauri/src/kits/manifest.rs in hangar-ai/hangar,
 // written out as data, in that file's order, translated by hand. Nothing has run them through
 // the real Rust yet: that comparison is future work.
 //

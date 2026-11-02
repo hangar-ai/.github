@@ -1,6 +1,6 @@
 ![Hangar.AI kits: tabs, skills and hooks for your coding agents.](https://raw.githubusercontent.com/hangar-ai/.github/main/brand/banner.png)
 
-[Hangar.AI](https://hangar.simnjs.fr) runs a team of coding agents side by side, in one window: Claude Code, Codex, Gemini CLI and OpenCode, with a board and a memory they share. It is free and open source, in [its own repository](https://github.com/simnJS/hangar-ai).
+[Hangar.AI](https://hangar.simnjs.fr) runs a team of coding agents side by side, in one window: Claude Code, Codex, Gemini CLI and OpenCode, with a board and a memory they share. It is free and open source, in [its own repository](https://github.com/hangar-ai/hangar).
 
 A **kit** brings a domain into Hangar: a tab in the side panel, skills and hooks for Claude Code, commands that run tools already on your machine. Each kit is one repository here.
 
@@ -28,4 +28,4 @@ The Library reads a static file, [catalog/index.json](https://github.com/hangar-
 
 ## Make one
 
-Start from [kit-template](https://github.com/hangar-ai/kit-template), and read [the kit contract](https://github.com/simnJS/hangar-ai/blob/main/docs/kits.md) and [Hangar UI](https://github.com/simnJS/hangar-ai/blob/main/docs/kit-ui.md). To list yours, [open a pull request on the catalog](https://github.com/hangar-ai/catalog). It stays marked unverified: only the kits of this organization are verified.
+Start from [kit-template](https://github.com/hangar-ai/kit-template), and read [the kit contract](https://github.com/hangar-ai/hangar/blob/main/docs/kits.md) and [Hangar UI](https://github.com/hangar-ai/hangar/blob/main/docs/kit-ui.md). To list yours, [open a pull request on the catalog](https://github.com/hangar-ai/catalog). It stays marked unverified: only the kits of this organization are verified.

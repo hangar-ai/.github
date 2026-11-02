@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const REPOSITORY = "simnJS/hangar-ai";
+const REPOSITORY = "hangar-ai/hangar";
 export const FILES = {
   "kit.css": "src-tauri/kit-sdk/kit.css",
   "kit.js": "src-tauri/kit-sdk/kit.js",

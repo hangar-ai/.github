@@ -1,7 +1,7 @@
 // `hangar-kit.json`, schema 1, checked from Node.
 //
 // This file RESTATES the rules of Hangar's validator; it is not that validator. The one
-// Hangar obeys is Rust: src-tauri/src/kits/manifest.rs in simnJS/hangar-ai, and
+// Hangar obeys is Rust: src-tauri/src/kits/manifest.rs in hangar-ai/hangar, and
 // docs/kits.md is its contract. A kit's CI cannot build Hangar, so the rules are written
 // again here, field by field and in the same words, in the same order. When the two
 // disagree, Rust is right and this file has a bug.
