@@ -9,13 +9,16 @@
 // The tests are not run from here: the workflow runs `node --test` in the kit, once per OS.
 //
 // Everything about the manifest restates Hangar's Rust validator; see scripts/lib/manifest.mjs for
-// what that means and where it can differ.
+// what that means and where it can differ. It reads schemas 1 and 2: schema 2 is for native tabs,
+// whose `entry` is a WebAssembly module and not a page, and a schema-1 tab may carry its module
+// in `native`. A module is looked into (scripts/lib/modules.mjs); a page is linted as it always was.
 
 import fs from "node:fs";
 import path from "node:path";
 import { readManifest } from "./lib/manifest.mjs";
 import { authorEmails, scanFiles, scanHistory } from "./lib/personal.mjs";
 import { checkPages } from "./lib/pages.mjs";
+import { checkModules } from "./lib/modules.mjs";
 
 /** Hangar's gallery drops an entry past these: src-tauri/src/kits/gallery.rs. */
 const MAX_TAGS = 8;
@@ -93,7 +96,7 @@ function main() {
     return 2;
   }
   const root = path.resolve(folder);
-  const { problems: manifestProblems, manifest } = readManifest(root);
+  const { problems: manifestProblems, manifest, modules = [] } = readManifest(root);
   const results = [];
 
   results.push(report("the manifest, by the rules of Hangar's validator", manifestProblems));
@@ -101,6 +104,8 @@ function main() {
   results.push(report("its plugin, named like the kit", pluginProblems(root, manifest)));
   results.push(report("a README and a licence", shapeProblems(root)));
   results.push(report("its pages: no colour of their own, nothing from outside the kit", manifest ? checkPages(root, manifest) : []));
+  // Only a kit with a native tab has this line: a kit of pages is checked, and reports, as it was.
+  if (modules.length > 0) results.push(report("its native modules: WebAssembly that imports only hangar.log and hangar.now", checkModules(fs.realpathSync(root), modules)));
 
   const { allow, problems: allowProblems } = allowList(root);
   const excuses = allow.map((rule) => `excused in ${rule.path}${rule.kinds ? ` (${rule.kinds.join(", ")})` : ""}: ${rule.why}`);
