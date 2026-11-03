@@ -77,6 +77,37 @@ export function walk(root, relative = "") {
   return found;
 }
 
+/**
+ * The files a kit would publish, when the folder is a git repository's own: those git tracks, and
+ * those it does not track and does not ignore. What it ignores (a Rust tab's `native/target/`, whose
+ * build output names the folders of the machine that built it) is never committed, and in a
+ * checkout, as CI has, there is none of it. `null` when the folder is not the top of a repository,
+ * or git is not here: a folder inside a repository that ignores it would otherwise be read as empty.
+ */
+function publishable(root) {
+  try {
+    if (git(root, "rev-parse", "--show-cdup").trim() !== "") return null;
+    const listed = git(root, "ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0").filter(Boolean);
+    // A file git tracks may be gone from the folder, and a gitlink is a folder.
+    return listed.filter((file) => {
+      try {
+        return fs.lstatSync(path.join(root, file)).isFile();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** What to look through: the publishable files, or all of the folder's where git cannot say. */
+export function filesOf(root) {
+  const listed = publishable(root);
+  if (listed === null) return walk(root);
+  return [...new Set(listed)].filter((file) => !file.split("/").some((part) => SKIPPED_FOLDERS.has(part))).sort();
+}
+
 const isBinary = (buffer) => buffer.subarray(0, 8192).includes(0);
 
 /** `allow` is `[{ path, kinds?, why }]`, from the kit's .kit-check.json: fake keys a test needs. */
@@ -86,7 +117,7 @@ function excused(allow, file, kind) {
 
 export function scanFiles(root, { allow = [], extra = [] } = {}) {
   const findings = [];
-  for (const file of walk(root)) {
+  for (const file of filesOf(root)) {
     const buffer = fs.readFileSync(path.join(root, file));
     if (isBinary(buffer)) continue;
     buffer
