@@ -1,10 +1,15 @@
-// `hangar-kit.json`, schema 1, checked from Node.
+// `hangar-kit.json`, schemas 1 and 2, checked from Node.
 //
 // This file RESTATES the rules of Hangar's validator; it is not that validator. The one
-// Hangar obeys is Rust: src-tauri/src/kits/manifest.rs in hangar-ai/hangar, and
-// docs/kits.md is its contract. A kit's CI cannot build Hangar, so the rules are written
-// again here, field by field and in the same words, in the same order. When the two
-// disagree, Rust is right and this file has a bug.
+// Hangar obeys is Rust: src-tauri/src/kits/manifest.rs in hangar-ai/hangar for schema 1, and
+// crates/hangar-core/src/kits/manifest.rs of the native Hangar (branch feat/native-rust) for
+// schemas 1 and 2; docs/kits.md and docs/native/kits-native.md are their contracts. A kit's CI
+// cannot build Hangar, so the rules are written again here, field by field and in the same
+// words, in the same order. When the two disagree, Rust is right and this file has a bug.
+//
+// Schema 2 only adds native tabs: a tab whose `entry` is a `.wasm` module. A schema-1 tab may
+// bring a module beside its HTML `entry`, in `native`. What the module holds (WebAssembly, and
+// what it imports) is not the manifest's business in Rust either: scripts/lib/modules.mjs.
 //
 // test/manifest-fixtures.mjs holds the cases of that file's own Rust tests, translated by hand.
 // Running the same cases through the real Rust, to compare the two, is future work.
@@ -17,12 +22,18 @@
 //   like (?i), is accepted as Rust accepts it, though Hangar's window cannot read it and
 //   refuses every value (docs/kits.md, "A tab with params"). Anything subtler can differ.
 // - JSON numbers: Rust tells 1.0 from 1, JSON.parse does not.
+// - The size of a module is its size on disk, as Rust reads it, with the same limit: 64 MB.
 
 import fs from "node:fs";
 import path from "node:path";
 
 export const FILE = "hangar-kit.json";
-export const SCHEMA = 1;
+/** The newest schema read; a higher one needs a newer Hangar. */
+export const SCHEMA = 2;
+/** The first schema a native tab (a `.wasm` `entry`) is allowed in. */
+export const NATIVE_SCHEMA = 2;
+/** The largest native module a kit may ship: the limit of any file of the kit that Hangar serves. */
+export const MAX_MODULE_BYTES = 64 * 1024 * 1024;
 export const PERMISSIONS = [
   "workspace.read",
   "panes.read",
@@ -105,6 +116,9 @@ const COMPARATOR = `(?:=|>=|>|<=|<|~|\\^)?\\s*${PART}(?:\\.${PART}(?:\\.${PART}(
 const REQUIREMENT = new RegExp(`^\\s*${COMPARATOR}(?:\\s*,\\s*${COMPARATOR})*\\s*$`);
 export const validRequirement = (text) => REQUIREMENT.test(text);
 
+/** Whether a normalized path names a WebAssembly module. */
+export const isModule = (relative) => relative.toLowerCase().endsWith(".wasm");
+
 /** A manifest path as Hangar keeps it, or `{ problem }`. */
 export function normalize(raw) {
   if (raw.trim() === "") return { problem: "is empty" };
@@ -132,6 +146,10 @@ class Check {
     this.root = root;
     this.problems = [];
     this.declaredCommands = new Set();
+    /** The manifest's schema once it has been read right, `undefined` while it is not. */
+    this.schema = undefined;
+    /** The modules the tabs name that passed every rule above: `{ at, path }`, `path` normalized. */
+    this.modules = [];
   }
 
   problem(at, what) {
@@ -190,11 +208,10 @@ class Check {
 
   manifest(object) {
     const schema = object.schema;
-    if (schema === undefined) this.problem("schema", "is missing");
-    else if (schema === SCHEMA) {
-      // what this reads
-    } else if (Number.isInteger(schema) && schema > SCHEMA) this.problem("schema", `${schema} needs a newer Hangar (this one reads ${SCHEMA})`);
-    else this.problem("schema", `must be ${SCHEMA}`);
+    if (schema === 1 || schema === SCHEMA) this.schema = schema;
+    else if (schema === undefined) this.problem("schema", "is missing");
+    else if (Number.isInteger(schema) && schema > SCHEMA) this.problem("schema", `${schema} needs a newer Hangar (this one reads ${SCHEMA})`);
+    else this.problem("schema", `must be 1 or ${SCHEMA}`);
 
     const id = this.required(object, "id", "");
     if (id !== undefined && !validId(id, 2, 40)) this.problem("id", "must be 2 to 40 characters among a-z, 0-9 and -");
@@ -257,8 +274,9 @@ class Check {
       const at = `tabs[${index}]`;
       if (!this.item(tab, at, seen)) return;
       this.requiredText(tab, "title", at);
-      const entry = this.required(tab, "entry", at);
-      if (entry !== undefined) this.file(entry, field(at, "entry"), [".html"]);
+      const raw = this.required(tab, "entry", at);
+      const entry = raw === undefined ? undefined : this.entry(raw, field(at, "entry"));
+      this.native(tab, entry, at);
       const icon = this.optional(tab, "icon", at);
       if (icon !== undefined) this.file(icon, field(at, "icon"), [".svg", ".png"]);
       this.permissions(tab, at);
@@ -267,6 +285,57 @@ class Check {
         this.problem(field(at, "singleton"), "must be true or false");
       }
     });
+  }
+
+  /** A tab's `entry`: an HTML page, or a module, which only schema 2 allows. */
+  entry(raw, at) {
+    const entry = this.file(raw, at, [".html", ".wasm"]);
+    if (entry === undefined || !isModule(entry)) return entry;
+    // A manifest whose schema is missing or wrong already said so; one more problem about it
+    // here would only repeat it.
+    if (this.schema !== undefined && this.schema < NATIVE_SCHEMA) {
+      this.problem(at, `a native tab needs "schema": ${NATIVE_SCHEMA}`);
+      return undefined;
+    }
+    return this.moduleSize(entry, at) ? this.module(entry, at) : undefined;
+  }
+
+  /**
+   * A tab's `native` module: beside an HTML `entry`, in either schema. `entry` is the tab's
+   * entry once it has been read right, `undefined` when it was wrong, which was said there.
+   */
+  native(tab, entry, tabAt) {
+    const at = field(tabAt, "native");
+    const raw = tab.native;
+    if (raw === undefined || raw === null) return;
+    if (typeof raw !== "string") return this.problem(at, "must be a string");
+    if (entry !== undefined && isModule(entry)) return this.problem(at, "is for a tab with an HTML entry, and this tab's entry is already a module");
+    const module = this.file(raw, at, [".wasm"]);
+    if (module !== undefined && this.moduleSize(module, at)) this.module(module, at);
+  }
+
+  /** A module is read whole into memory, so it is held to the limit of any file Hangar serves. */
+  moduleSize(module, at) {
+    const found = this.inside(module);
+    let size = 0;
+    if (!found.problem) {
+      try {
+        size = fs.statSync(found.real).size;
+      } catch {
+        // as Rust: a file that cannot be measured is not too large
+      }
+    }
+    if (size > MAX_MODULE_BYTES) {
+      this.problem(at, `is larger than ${MAX_MODULE_BYTES / (1024 * 1024)} MB`);
+      return false;
+    }
+    return true;
+  }
+
+  /** Keeps a module that passed, for the checks of what it holds. */
+  module(relative, at) {
+    this.modules.push({ at, path: relative });
+    return relative;
   }
 
   tabParams(tab, tabAt) {
@@ -481,7 +550,11 @@ function isFile(file) {
   }
 }
 
-/** Checks a manifest's text against the kit folder it sits in. Every problem is listed. */
+/**
+ * Checks a manifest's text against the kit folder it sits in. Every problem is listed, and the
+ * native modules the tabs name (`modules`: where each is named, and its normalized path) are
+ * those that passed the rules above, ready for scripts/lib/modules.mjs.
+ */
 export function parseManifest(text, root) {
   let value;
   try {
@@ -492,7 +565,7 @@ export function parseManifest(text, root) {
   if (!isObject(value)) return { problems: [`${FILE} must hold a JSON object`] };
   const check = new Check(fs.realpathSync(root));
   check.manifest(value);
-  return { problems: check.problems, manifest: value };
+  return { problems: check.problems, manifest: value, modules: check.modules };
 }
 
 /** Reads and checks `<root>/hangar-kit.json`. */

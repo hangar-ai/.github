@@ -1,12 +1,14 @@
-// The cases of the #[test] functions of src-tauri/src/kits/manifest.rs in hangar-ai/hangar,
+// The cases of the #[test] functions of src-tauri/src/kits/manifest.rs in hangar-ai/hangar, and
+// of crates/hangar-core/src/kits/manifest.rs of the native Hangar for schema 2 and native tabs,
 // written out as data, in that file's order, translated by hand. Nothing has run them through
 // the real Rust yet: that comparison is future work.
 //
 //   name      where it comes from: the Rust test's name
-//   files     the kit folder: path -> text
+//   files     the kit folder: path -> text, bytes (a Buffer), or { size } for a file of that many
+//             bytes that holds nothing (a module over the limit, without writing 64 MB)
 //   manifest  what hangar-kit.json holds, or `raw` for text that is not even JSON
-//   expect    "ok", or { exact }, { contains: [...] }, { startsWith } on the problems
-//             joined by "; ", as Rust joins them
+//   expect    "ok", or { exact }, { contains: [...] }, { excludes: [...] }, { startsWith } on the
+//             problems joined by "; ", as Rust joins them
 
 const minimal = () => ({ schema: 1, id: "roblox", name: "Roblox", version: "1.0.0", description: "Roblox Studio in Hangar." });
 const withFields = (patch) => ({ ...minimal(), ...patch });
@@ -69,6 +71,85 @@ add(
   { ".claude-plugin/plugin.json": '{"name":"roblox","version":"0.1.0"}', "icon.svg": "<svg/>", "tabs/explorer/index.html": "<!doctype html>", "tabs/explorer/icon.png": "png" },
 );
 
+// The native tests. Rust's `native_kit(schema, tab)`: a tab with an id, a title and two
+// permissions, which the fields of `tab` complete or replace, under the given schema.
+const nativeKit = (schema, tab) => ({ ...minimal(), schema, tabs: [{ id: "t", title: "T", permissions: ["panes.read", "data.write"], ...tab }] });
+const stub = "\0asm";
+const MEGABYTE = 1024 * 1024;
+
+// a_html_tab_is_a_page_under_either_schema
+for (const schema of [1, 2]) add(`an HTML tab under schema ${schema}`, nativeKit(schema, { entry: "tab.html" }), "ok", tabHtml);
+
+// a_wasm_entry_is_a_native_tab_under_schema_2
+add("a module that is not there, whatever its case", nativeKit(2, { entry: "tabs\\.\\Absent.WASM" }), { startsWith: "tabs[0].entry: not found" }, { "tabs/hello.wasm": stub });
+add("a module entry, with its path folded", nativeKit(2, { entry: "./tabs//hello.wasm" }), "ok", { "tabs/hello.wasm": stub });
+
+// a_schema_1_tab_may_bring_a_module_beside_its_page
+for (const schema of [1, 2]) {
+  add(`a module beside its page under schema ${schema}`, nativeKit(schema, { entry: "tabs/ci/index.html", native: "tabs\\ci.wasm" }), "ok", { "tabs/ci/index.html": "", "tabs/ci.wasm": stub });
+}
+
+// a_wasm_entry_under_schema_1_is_refused_and_says_why
+add("a module entry under schema 1", nativeKit(1, { entry: "tabs/hello.wasm" }), refused('tabs[0].entry: a native tab needs "schema": 2'), { "tabs/hello.wasm": stub });
+add("a module entry without a schema", { ...nativeKit(1, { entry: "tabs/hello.wasm" }), schema: undefined }, refused("schema: is missing"), { "tabs/hello.wasm": stub });
+
+// a_native_field_is_checked_like_an_entry
+const nativeFiles = { "tab.html": "", "tab.wasm": stub, "notes.txt": "" };
+for (const [tab, exact] of [
+  [{ entry: "tab.html", native: "tab.html" }, "tabs[0].native: must be a .wasm file"],
+  [{ entry: "tab.html", native: "missing.wasm" }, "tabs[0].native: not found in the kit folder"],
+  [{ entry: "tab.html", native: 3 }, "tabs[0].native: must be a string"],
+  [{ entry: "tab.html", native: "../tab.wasm" }, "tabs[0].native: must not climb out with `..`"],
+]) {
+  add(`native refused: ${JSON.stringify(tab.native)}`, nativeKit(1, tab), refused(exact), nativeFiles);
+}
+add("a module as the entry is already the module", nativeKit(2, { entry: "tab.wasm", native: "tab.wasm" }), { startsWith: "tabs[0].native: is for a tab with an HTML entry" }, nativeFiles);
+add("a null native is as absent as elsewhere", nativeKit(1, { entry: "tab.html", native: null }), "ok", nativeFiles);
+
+// a_module_that_leaves_the_kit_is_refused
+for (const entry of ["../x.wasm", "tabs/../../x.wasm", "/etc/x.wasm", "C:\\x.wasm"]) {
+  add(`a module entry ${entry}`, nativeKit(2, { entry }), { startsWith: "tabs[0].entry: ", excludes: ["not found"] }, { "t.html": "" });
+  add(`a native ${entry}`, nativeKit(2, { entry: "t.html", native: entry }), { startsWith: "tabs[0].native: ", excludes: ["not found"] }, { "t.html": "" });
+}
+
+// a_module_is_held_to_the_size_of_a_kit_file
+add("a module over 64 MB as the entry", nativeKit(2, { entry: "big.wasm" }), refused("tabs[0].entry: is larger than 64 MB"), { "t.html": "", "big.wasm": { size: 64 * MEGABYTE + 1 } });
+add("a module over 64 MB beside the page", nativeKit(2, { entry: "t.html", native: "big.wasm" }), refused("tabs[0].native: is larger than 64 MB"), { "t.html": "", "big.wasm": { size: 64 * MEGABYTE + 1 } });
+add("a module of 64 MB is not over", nativeKit(2, { entry: "big.wasm" }), "ok", { "big.wasm": { size: 64 * MEGABYTE } });
+
+// a_page_is_not_a_module_and_the_other_way_round
+add("neither a page nor a module", nativeKit(2, { entry: "notes.txt" }), refused("tabs[0].entry: must be a .html or .wasm file"), nativeFiles);
+add("a page is no native module", nativeKit(2, { entry: "tab.html", native: "tab.html" }), refused("tabs[0].native: must be a .wasm file"), nativeFiles);
+
+// the_hello_native_example_s_manifest_reads: examples/kits/hello-native/hangar-kit.json
+const helloNative = {
+  schema: 2,
+  id: "hello-native",
+  name: "Hello native",
+  version: "0.1.0",
+  description: "A native tab written in Rust: a form, a table of the workspace's panes, a note kept in the kit's data.",
+  author: "Hangar",
+  hangar: ">=1.12.1",
+  tabs: [{ id: "hello", title: "Hello", entry: "tabs/hello.wasm", permissions: ["panes.read", "panes.send", "data.read", "data.write"] }],
+};
+add("the hello-native example", helloNative, "ok", { "tabs/hello.wasm": stub });
+add("the hello-native example, unbuilt", helloNative, { startsWith: "tabs[0].entry: not found" });
+
+// Not in the Rust tests: what its code says, added so the comparison with the real Rust covers it too.
+// The schema is reported once, and a module entry adds nothing to a schema that is not read.
+for (const schema of [3, 0, "2", null]) {
+  add(`a module entry, schema ${JSON.stringify(schema)}`, nativeKit(schema, { entry: "tabs/hello.wasm" }), schema === 3 ? refused("schema: 3 needs a newer Hangar (this one reads 2)") : refused("schema: must be 1 or 2"), { "tabs/hello.wasm": stub });
+}
+add("a module entry that is not there, under schema 1", nativeKit(1, { entry: "tabs/hello.wasm" }), refused("tabs[0].entry: not found in the kit folder"));
+add("a module entry is a file", nativeKit(2, { entry: "tabs/hello.wasm" }), refused("tabs[0].entry: is not a file"), { "tabs/hello.wasm/x": "" });
+add("an empty native", nativeKit(1, { entry: "tab.html", native: "" }), refused("tabs[0].native: is empty"), nativeFiles);
+add("a module and a page both wrong are both told", nativeKit(2, { entry: "missing.html", native: "missing.wasm" }), refused("tabs[0].entry: not found in the kit folder; tabs[0].native: not found in the kit folder"));
+add("a module after the page's icon is told in the order of Rust", nativeKit(2, { entry: "tab.html", native: "missing.wasm", icon: "missing.svg" }), refused("tabs[0].native: not found in the kit folder; tabs[0].icon: not found in the kit folder"), nativeFiles);
+add("native on a tab without an entry", nativeKit(2, { entry: undefined, native: "tab.wasm" }), refused("tabs[0].entry: is missing"), nativeFiles);
+add("an upper-case extension is a module", nativeKit(2, { entry: "Tab.WASM" }), "ok", { "Tab.WASM": stub });
+add("a module and a page, one tab each", { ...minimal(), schema: 2, tabs: [{ id: "a", title: "A", entry: "a.html", permissions: [] }, { id: "b", title: "B", entry: "b.wasm", permissions: [] }] }, "ok", { "a.html": "", "b.wasm": stub });
+add("a schema-1 kit with a module and a page, one tab each", { ...minimal(), schema: 1, tabs: [{ id: "a", title: "A", entry: "a.html", native: "a.wasm", permissions: [] }, { id: "b", title: "B", entry: "b.wasm", permissions: [] }] }, refused('tabs[1].entry: a native tab needs "schema": 2'), { "a.html": "", "a.wasm": stub, "b.wasm": stub });
+
 // a_kit_without_a_plugin_folder_brings_none
 add("no plugin folder", minimal(), "ok");
 add("a named plugin folder", withFields({ plugin: "claude/" }), "ok", { "claude/.claude-plugin/plugin.json": '{"name":"roblox"}' });
@@ -82,7 +163,8 @@ cases.push({ name: "not JSON", raw: "{ nope", expect: { contains: ["not valid JS
 for (const id of ["R", "Roblox", "rob_lox", "a", "x".repeat(41), "kit.v2"]) add(`bad id ${id}`, withFields({ id }), { startsWith: "id: " });
 for (const id of ["ro", "roblox-studio", "k2", "x".repeat(40)]) add(`good id ${id}`, withFields({ id }), "ok");
 add("bad version", withFields({ version: "1.0" }), { contains: ["semver"] });
-add("newer schema", withFields({ schema: 2 }), { contains: ["newer Hangar"] });
+add("newer schema", withFields({ schema: 3 }), refused("schema: 3 needs a newer Hangar (this one reads 2)"));
+add("schema 0", withFields({ schema: 0 }), refused("schema: must be 1 or 2"));
 add("bad requirement", withFields({ hangar: "soon" }), { contains: ["hangar"] });
 add("bad homepage", withFields({ homepage: "javascript:alert(1)" }), { contains: ["homepage"] });
 
@@ -239,9 +321,11 @@ for (const hangar of ["^1.9", "~1.9.0", "1.x", "*", ">=1.9.0, <2.0.0", ">=1.9.0-
 for (const hangar of [">=1.9.0 <2.0.0", ">=1.9.0 || <1", "", "v1.9.0", ">=01.9.0"]) add(`requirement refused ${JSON.stringify(hangar)}`, withFields({ hangar }), { startsWith: "hangar: " });
 for (const version of ["0.3.0-beta.1", "1.2.3+build.5", "1.2.3-rc.1+x"]) add(`version ${version}`, withFields({ version }), "ok");
 for (const version of ["01.2.3", "1.2", "v1.2.3", "1.2.3-", "1.2.3-01"]) add(`version refused ${version}`, withFields({ version }), { startsWith: "version: " });
-add("schema as text", withFields({ schema: "1" }), refused("schema: must be 1"));
-add("schema null", withFields({ schema: null }), refused("schema: must be 1"));
-add("schema 0", withFields({ schema: 0 }), refused("schema: must be 1"));
+add("schema as text", withFields({ schema: "1" }), refused("schema: must be 1 or 2"));
+add("schema null", withFields({ schema: null }), refused("schema: must be 1 or 2"));
+add("schema -1", withFields({ schema: -1 }), refused("schema: must be 1 or 2"));
+add("schema 2.5", withFields({ schema: 2.5 }), refused("schema: must be 1 or 2"));
+add("schema 2 is read", withFields({ schema: 2 }), "ok");
 add("tabs as an object", withFields({ tabs: {} }), refused("tabs: must be a list"));
 add("setup as text", withFields({ setup: "x" }), refused("setup: must be a list"));
 add("a tab as text", withFields({ tabs: ["x"] }), refused("tabs[0]: must be an object"));
@@ -265,5 +349,6 @@ export function judge(expect, problems) {
   if (expect.exact !== undefined && problems !== expect.exact) return `expected «${expect.exact}», got «${problems}»`;
   if (expect.startsWith !== undefined && !problems.startsWith(expect.startsWith)) return `expected to start with «${expect.startsWith}», got «${problems}»`;
   for (const part of expect.contains ?? []) if (!problems.includes(part)) return `expected «${part}» in «${problems}»`;
+  for (const part of expect.excludes ?? []) if (problems.includes(part)) return `expected no «${part}» in «${problems}»`;
   return null;
 }
