@@ -8,6 +8,22 @@ name: Kit check
 #
 # The manifest check restates the rules of Hangar's Rust validator, it is not that validator:
 # scripts/lib/manifest.mjs says where the two can differ. Hangar re-reads every manifest itself.
+#
+# It reads schema 1 and schema 2. Schema 2 is for native tabs, whose `entry` is a `.wasm` module
+# (docs/native/kits-native.md in Hangar); a schema-1 tab may carry its module in `native` beside its
+# HTML page. A page is linted as ever, a module is checked to be WebAssembly that imports only
+# hangar.log and hangar.now. The tests job runs the kit's `node --test` whatever its tabs are.
+#
+# Until a tag carries this, a kit on its `rust-rewrite` branch calls the branch. The scripts come
+# from the ref `tools-ref` names, which must be the same as the @ref of `uses`: on this branch it
+# is, by default, so that the one line below is all a kit changes.
+#
+#   jobs:
+#     kit-check:
+#       uses: hangar-ai/.github/.github/workflows/kit-check.yml@rust-rewrite
+#
+# THE RELEASE THAT TAGS THIS sets the default of `tools-ref` to that tag, in the same commit: a
+# default naming a branch is for the branch only, and a tagged workflow must not read a moving ref.
 
 on:
   workflow_call:
@@ -19,7 +35,7 @@ on:
       tools-ref:
         description: The ref of hangar-ai/.github holding the scripts. Keep it in step with the @ref of `uses`.
         type: string
-        default: v1
+        default: rust-rewrite
       node-version:
         type: string
         default: "22"
