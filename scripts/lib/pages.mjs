@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { isModule } from "./manifest.mjs";
 
 const NAMED_COLOURS =
   "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen".split(
@@ -119,17 +120,25 @@ function filesUnder(folder) {
   return found;
 }
 
-/** Every page, sheet and script of the kit's tabs: the folders their entries sit in, and tabs/. */
+/**
+ * Every page, sheet and script of the kit's tabs: the folders the entries that are pages sit in,
+ * and tabs/. A native tab's entry is a module, not a page: the folder it sits in is not looked
+ * through for pages, and the module is looked into by modules.mjs. An entry that leaves the kit
+ * is the manifest's to refuse; no folder outside the kit is read for it.
+ */
 export function tabFiles(root, manifest) {
   const folders = new Set();
   if (fs.existsSync(path.join(root, "tabs"))) folders.add(path.join(root, "tabs"));
-  for (const tab of Array.isArray(manifest?.tabs) ? manifest.tabs : []) {
-    if (typeof tab?.entry === "string") folders.add(path.resolve(root, path.dirname(tab.entry.replaceAll("\\", "/"))));
-  }
+  const kept = (file) => file.startsWith(root + path.sep);
+  const entries = (Array.isArray(manifest?.tabs) ? manifest.tabs : [])
+    .filter((tab) => typeof tab?.entry === "string" && !isModule(tab.entry))
+    .map((tab) => path.resolve(root, tab.entry.replaceAll("\\", "/")))
+    .filter(kept);
+  for (const entry of entries) folders.add(path.dirname(entry));
   const files = new Set();
   for (const folder of folders) {
     if (fs.existsSync(folder) && folder !== root) for (const file of filesUnder(folder)) files.add(file);
-    else if (folder === root) for (const tab of manifest.tabs) files.add(path.resolve(root, tab.entry));
+    else if (folder === root) for (const entry of entries) if (path.dirname(entry) === root) files.add(entry);
   }
   return [...files];
 }
